@@ -6,15 +6,19 @@
 //! has changed, because rebuilding closes it on some platforms.
 
 use crate::config::Config;
-use crate::icon::{self, Face};
+use crate::icon::{self, Dot, Face};
 use crate::log::{lerror, linfo, lwarn};
 use crate::ports::{self, Listener};
 use crate::util::{now_unix, span};
-use crate::{autostart, notify, theme};
+use crate::{autostart, notify, program_icon, theme};
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant, SystemTime};
 use tao::event_loop::EventLoopProxy;
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use tray_icon::menu::{
+    CheckMenuItem, Icon as MenuIcon, IconMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem,
+    Submenu,
+};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 const ID_OPEN: &str = "open:";
@@ -52,6 +56,10 @@ pub struct App {
     /// An early rescan, after a stop.
     soon: Option<Instant>,
 
+    /// Program icons by executable path, read once each. `None` remembers
+    /// that there was none, so it is not asked again every scan.
+    icons: HashMap<String, Option<(Vec<u8>, u32)>>,
+
     // What is on screen, so a scan only repaints what changed.
     face: Face,
     menu_sig: String,
@@ -78,6 +86,7 @@ impl App {
             dark_taskbar,
             all: Vec::new(),
             soon: None,
+            icons: HashMap::new(),
             face: Face::Closed,
             menu_sig: String::new(),
             cfg_mtime: Config::modified(),
@@ -265,6 +274,24 @@ impl App {
         }
     }
 
+    /// The icon for a row: the program's own where there is one, else a dot.
+    fn row_icon(&mut self, l: &Listener) -> Option<MenuIcon> {
+        let program = self
+            .icons
+            .entry(l.path.clone())
+            .or_insert_with(|| program_icon::load(&l.path))
+            .clone();
+        let (rgba, edge) = program.unwrap_or_else(|| {
+            let kind = if l.from_terminal && !l.system {
+                Dot::Yours
+            } else {
+                Dot::Other
+            };
+            (icon::dot(kind), 32)
+        });
+        MenuIcon::from_rgba(rgba, edge, edge).ok()
+    }
+
     fn rebuild_menu(&mut self, force: bool) {
         let now = now_unix();
         let labelled = |ls: Vec<&Listener>| -> Vec<(Listener, String)> {
@@ -285,6 +312,8 @@ impl App {
                 .collect::<Vec<_>>(),
             self.cfg.show_system
         );
+        // Rebuilding closes an open menu on some platforms, so only when
+        // something on it actually changed.
         if sig == self.menu_sig && !force {
             return;
         }
@@ -293,7 +322,7 @@ impl App {
         let tip: Vec<String> = rows
             .iter()
             .take(8)
-            .map(|(l, _)| format!(":{} {}", l.port, l.name))
+            .map(|(l, _)| format!(":{} {}", l.port, title(l)))
             .collect();
         let tooltip = if tip.is_empty() {
             format!("Porta: {header}")
@@ -304,43 +333,48 @@ impl App {
 
         let menu = Menu::new();
         let _ = menu.append(&MenuItem::with_id(ID_INERT, &header, false, None));
-        if !rows.is_empty() {
-            let _ = menu.append(&PredefinedMenuItem::separator());
-            for (l, label) in &rows {
-                let _ = menu.append(&port_menu(l, label, now));
-            }
+        let _ = menu.append(&PredefinedMenuItem::separator());
+        if rows.is_empty() {
+            let _ = menu.append(&MenuItem::with_id(
+                ID_INERT,
+                "Start a dev server and it shows up here",
+                false,
+                None,
+            ));
+        }
+        for (l, label) in &rows {
+            let sub = port_menu(l, label, now);
+            sub.set_icon(self.row_icon(l));
+            let _ = menu.append(&sub);
         }
 
         let _ = menu.append(&PredefinedMenuItem::separator());
         let others = Submenu::new(
-            format!("Other apps and services ({})", other_rows.len()),
+            columns("Other apps and services", &other_rows.len().to_string()),
             !other_rows.is_empty(),
         );
         for (l, label) in &other_rows {
-            let _ = others.append(&port_menu(l, label, now));
+            let sub = port_menu(l, label, now);
+            sub.set_icon(self.row_icon(l));
+            let _ = others.append(&sub);
         }
         let _ = menu.append(&others);
-        let _ = menu.append(&CheckMenuItem::with_id(
-            ID_SYSTEM,
-            "Show system ports",
-            true,
-            self.cfg.show_system,
-            None,
-        ));
-        let _ = menu.append(&MenuItem::with_id(ID_REFRESH, "Refresh", true, None));
-        let _ = menu.append(&MenuItem::with_id(
-            ID_EDIT,
-            "Edit settings\u{2026}",
-            true,
-            None,
-        ));
-        let _ = menu.append(&CheckMenuItem::with_id(
-            ID_AUTOSTART,
-            "Run at login",
-            true,
-            autostart_on,
-            None,
-        ));
+
+        let settings = Submenu::new("Settings", true);
+        let _ = settings.append_items(&[
+            &CheckMenuItem::with_id(
+                ID_SYSTEM,
+                "Show system ports",
+                true,
+                self.cfg.show_system,
+                None,
+            ),
+            &CheckMenuItem::with_id(ID_AUTOSTART, "Run at login", true, autostart_on, None),
+            &PredefinedMenuItem::separator(),
+            &MenuItem::with_id(ID_REFRESH, "Refresh now", true, None),
+            &MenuItem::with_id(ID_EDIT, "Edit settings file\u{2026}", true, None),
+        ]);
+        let _ = menu.append(&settings);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&MenuItem::with_id(ID_QUIT, "Quit Porta", true, None));
 
@@ -348,72 +382,92 @@ impl App {
     }
 }
 
-/// ":3000  node · vite · up 2h 05m · LAN". Minutes only, so the label (and
-/// with it the menu) changes at most once a minute.
+/// What a row is called: the command-line hint where there is one ("next dev",
+/// "manage.py runserver"), which says more than "node" or "python" does.
+fn title(l: &Listener) -> String {
+    l.hint().unwrap_or_else(|| l.name.clone())
+}
+
+/// Left text, with right text in a column against the menu's edge. Windows
+/// menus right-align whatever follows a tab, the way they show shortcuts;
+/// macOS ones don't, so there the two are just spaced apart.
+fn columns(left: &str, right: &str) -> String {
+    if right.is_empty() {
+        left.to_string()
+    } else if cfg!(windows) {
+        format!("{left}\t{right}")
+    } else {
+        format!("{left}    {right}")
+    }
+}
+
+/// ":3000  next dev" on the left, "LAN · 2h 05m" on the right. Minutes only,
+/// so the label (and with it the menu) changes at most once a minute.
 fn row_label(l: &Listener, now: u64) -> String {
-    let mut parts = vec![menu_text(&l.name)];
-    if let Some(h) = l.hint() {
-        parts.push(menu_text(&h));
+    let mut right = Vec::new();
+    if l.exposed {
+        right.push("LAN".to_string());
     }
     if let Some(s) = l.started {
         let up = now.saturating_sub(s);
-        parts.push(if up < 60 {
-            "just started".into()
-        } else {
-            format!("up {}", span(up))
-        });
+        right.push(if up < 60 { "now".into() } else { span(up) });
     }
-    if l.exposed {
-        parts.push("LAN".into());
-    }
-    format!(":{}  {}", l.port, parts.join(" \u{00b7} "))
+    columns(
+        &format!(":{}  {}", l.port, menu_text(&title(l))),
+        &right.join(" \u{00b7} "),
+    )
 }
 
-/// One port's submenu: open it, what exactly it is, and stop it.
+/// One port's submenu: the two actions first, then what exactly it is.
 fn port_menu(l: &Listener, label: &str, now: u64) -> Submenu {
     let sub = Submenu::new(label, true);
     let _ = sub.append(&MenuItem::with_id(
         format!("{ID_OPEN}{}", l.port),
-        format!("Open http://localhost:{}", l.port),
+        columns("Open in browser", &format!("localhost:{}", l.port)),
         true,
         None,
     ));
+    // Stopping part of the OS is never the fix, so it is not offered.
+    let stop_label = columns(
+        &format!("Stop {}", menu_text(&l.name)),
+        &format!("pid {}", l.pid),
+    );
+    let _ = sub.append(&IconMenuItem::with_id(
+        format!("{ID_STOP}{}", l.pid),
+        stop_label,
+        !l.system,
+        MenuIcon::from_rgba(icon::stop_mark(), 32, 32).ok(),
+        None,
+    ));
     let _ = sub.append(&PredefinedMenuItem::separator());
+
+    let mut info = Vec::new();
     if !l.command.is_empty() {
         let mut c: String = l.command.chars().take(70).collect();
         if c.len() < l.command.len() {
             c.push('\u{2026}');
         }
-        let _ = sub.append(&MenuItem::with_id(ID_INERT, menu_text(&c), false, None));
+        info.push(menu_text(&c));
     }
-    let mut facts = vec![format!("pid {}", l.pid)];
-    if let Some(s) = l.started {
-        facts.push(format!("running {}", span(now.saturating_sub(s))));
+    match l.started {
+        Some(s) => info.push(format!(
+            "{} \u{00b7} running {}",
+            menu_text(&l.name),
+            span(now.saturating_sub(s))
+        )),
+        None => info.push(menu_text(&l.name)),
     }
-    let _ = sub.append(&MenuItem::with_id(
-        ID_INERT,
-        facts.join(" \u{00b7} "),
-        false,
-        None,
-    ));
-    let _ = sub.append(&MenuItem::with_id(
-        ID_INERT,
+    info.push(
         if l.exposed {
             "Reachable from other devices on your network"
         } else {
             "Only reachable from this computer"
-        },
-        false,
-        None,
-    ));
-    let _ = sub.append(&PredefinedMenuItem::separator());
-    // Stopping part of the OS is never the fix, so it is not offered.
-    let _ = sub.append(&MenuItem::with_id(
-        format!("{ID_STOP}{}", l.pid),
-        format!("Stop {}", menu_text(&l.name)),
-        !l.system,
-        None,
-    ));
+        }
+        .into(),
+    );
+    for line in info {
+        let _ = sub.append(&MenuItem::with_id(ID_INERT, line, false, None));
+    }
     sub
 }
 
@@ -485,6 +539,7 @@ mod tests {
             pid: 42,
             name: "node".into(),
             command: "node /app/node_modules/vite/bin/vite.js".into(),
+            path: String::new(),
             started: Some(1_000),
             exposed: true,
             system: false,
@@ -494,9 +549,10 @@ mod tests {
 
     #[test]
     fn row_labels_say_what_and_how_long() {
+        let gap = if cfg!(windows) { "\t" } else { "    " };
         assert_eq!(
             row_label(&l(), 1_000 + 7_500),
-            ":3000  node \u{00b7} vite \u{00b7} up 2h 05m \u{00b7} LAN"
+            format!(":3000  vite{gap}LAN \u{00b7} 2h 05m")
         );
         let quiet = Listener {
             command: String::new(),
@@ -505,5 +561,6 @@ mod tests {
             ..l()
         };
         assert_eq!(row_label(&quiet, 0), ":3000  node");
+        assert_eq!(title(&quiet), "node");
     }
 }

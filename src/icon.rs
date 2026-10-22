@@ -172,6 +172,35 @@ pub fn render_app(edge: u32) -> Vec<u8> {
     })
 }
 
+/// What a menu row's dot says, where there is no program icon to show.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Dot {
+    /// A server you started.
+    Yours,
+    /// An app's or a service's.
+    Other,
+}
+
+/// A small filled circle for a menu row, 32 px (menus draw it at 16).
+pub fn dot(kind: Dot) -> Vec<u8> {
+    let colour: Rgb = match kind {
+        Dot::Yours => [0.30, 0.62, 1.0],
+        Dot::Other => [0.55, 0.55, 0.58],
+    };
+    supersample(32, |x, y| {
+        (len(x - 16.0, y - 16.0) - 6.5 <= 0.0).then_some(colour)
+    })
+}
+
+/// The mark beside "Stop": a red square, the stop symbol. It is the one item
+/// with a consequence, so the eye should find it without reading.
+pub fn stop_mark() -> Vec<u8> {
+    let red: Rgb = [0.90, 0.26, 0.24];
+    supersample(32, |x, y| {
+        (rounded_box(x, y, 16.0, 16.0, 7.5, 7.5, 2.0) <= 0.0).then_some(red)
+    })
+}
+
 /// Sizes the app icon is written at: everything an .ico, an .icns iconset
 /// and the docs want, each drawn rather than resampled.
 pub const APP_SIZES: [u32; 10] = [16, 20, 24, 32, 40, 48, 64, 128, 256, 1024];

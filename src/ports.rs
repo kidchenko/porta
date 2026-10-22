@@ -27,6 +27,8 @@ pub struct Listener {
     pub name: String,
     /// The full command line, where the OS lets us read it.
     pub command: String,
+    /// The executable's full path, for its icon. Empty where unknown.
+    pub path: String,
     /// When the process started, as Unix time.
     pub started: Option<u64>,
     /// Bound to something other than loopback: other machines can connect.
@@ -278,6 +280,7 @@ mod imp {
     use super::{fold, is_system_name, under_shell, Listener, Socket};
     use std::collections::HashMap;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use windows::core::PWSTR;
     use windows::Wdk::System::Threading::{NtQueryInformationProcess, PROCESSINFOCLASS};
     use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE, UNICODE_STRING};
     use windows::Win32::NetworkManagement::IpHelper::{
@@ -290,8 +293,8 @@ mod imp {
         TH32CS_SNAPPROCESS,
     };
     use windows::Win32::System::Threading::{
-        GetProcessTimes, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-        PROCESS_TERMINATE,
+        GetProcessTimes, OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
+        PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
     };
 
     /// The listener table for one address family, as raw bytes. Asked twice:
@@ -409,6 +412,16 @@ mod imp {
         Some(unix_from(c))
     }
 
+    fn image_path(p: &Process) -> Option<String> {
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        unsafe {
+            QueryFullProcessImageNameW(p.0, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len)
+        }
+        .ok()?;
+        Some(String::from_utf16_lossy(&buf[..len as usize]))
+    }
+
     /// ProcessCommandLineInformation (60, Windows 8.1+) hands back the command
     /// line directly, with no reading of the other process's memory.
     fn command_line(p: &Process) -> Option<String> {
@@ -464,9 +477,13 @@ mod imp {
                 let opened = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }
                     .ok()
                     .map(Process);
-                let (command, started) = match &opened {
-                    Some(p) => (command_line(p).unwrap_or_default(), started(p)),
-                    None => (String::new(), None),
+                let (command, path, started) = match &opened {
+                    Some(p) => (
+                        command_line(p).unwrap_or_default(),
+                        image_path(p).unwrap_or_default(),
+                        started(p),
+                    ),
+                    None => (String::new(), String::new(), None),
                 };
                 Listener {
                     port,
@@ -480,6 +497,7 @@ mod imp {
                         name
                     },
                     command,
+                    path,
                     started,
                     exposed,
                     from_terminal: under_shell(&procs, pid),
@@ -627,6 +645,7 @@ mod imp {
                     system: is_system_name(&name),
                     name,
                     command,
+                    path: String::new(),
                     started,
                     exposed,
                     from_terminal: under_shell(&parents, pid),

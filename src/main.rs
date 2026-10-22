@@ -9,7 +9,8 @@
 //! |-------------------|------------------------------------------------------|
 //! | `ports`           | listening sockets → processes; stopping one          |
 //! | `config`          | the persisted preferences                            |
-//! | `icon`            | draws the door                                       |
+//! | `icon`            | draws the door, and the dots beside menu rows        |
+//! | `program_icon`    | the icon of the program behind a port                |
 //! | `notify`          | toasts                                               |
 //! | `app`             | the tray icon and its menu                           |
 //! | `single_instance` | one copy at a time; relaunching summons it           |
@@ -22,6 +23,7 @@ mod icon;
 mod log;
 mod notify;
 mod ports;
+mod program_icon;
 mod single_instance;
 mod theme;
 mod util;
