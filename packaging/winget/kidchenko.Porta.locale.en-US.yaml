@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: kidchenko.Porta
+PackageVersion: 0.0.1
+PackageLocale: en-US
+Publisher: kidchenko
+PublisherUrl: https://github.com/kidchenko
+PublisherSupportUrl: https://github.com/kidchenko/porta/issues
+PackageName: Porta
+PackageUrl: https://github.com/kidchenko/porta
+License: MIT
+LicenseUrl: https://github.com/kidchenko/porta/blob/main/LICENSE
+Copyright: Copyright (c) 2026 kidchenko
+ShortDescription: See what is listening on your ports, from the tray, and stop it
+Description: |-
+  A door in the notification area that lists every program listening on a
+  network port: the port, the process, what it was started with, how long it
+  has been up, and whether it is reachable from the network or only from this
+  machine. Open one in the browser, or stop the process, from the menu.
+
+  For "port 3000 is already in use" and "which forgotten dev server is this?".
+Moniker: porta
+Tags:
+  - ports
+  - localhost
+  - developer-tools
+  - network
+  - process
+  - tray
+  - utilities
+ReleaseNotesUrl: https://github.com/kidchenko/porta/releases
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
