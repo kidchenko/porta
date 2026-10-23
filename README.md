@@ -107,8 +107,15 @@ porta stop 3000     # stop whatever is listening on 3000
 ### Windows
 
 Download [**Porta-Setup.exe**](https://github.com/kidchenko/porta/releases/latest/download/Porta-Setup.exe).
-Each release also ships a portable `porta-x.y.z-x64.exe`. winget and
-Chocolatey packages are on the way.
+Each release also ships a portable `porta-x.y.z-x64.exe`, which
+[Scoop](https://scoop.sh) installs:
+
+```powershell
+scoop bucket add kidchenko https://github.com/kidchenko/scoop-bucket
+scoop install kidchenko/porta
+```
+
+winget and Chocolatey packages are on the way.
 
 The binary isn't code-signed, so SmartScreen warns on first run: click **More
 info → Run anyway**.
