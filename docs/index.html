@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Porta: see what's on your ports, and stop it</title>
+<meta name="description" content="A door in the tray that lists every dev server you started: its port, project, stack and uptime. Open it in the browser, copy its network address, or stop it, in two clicks. For macOS and Windows. Free and open source.">
+<link rel="icon" href="img/icon-256.png" type="image/png">
+
+<meta property="og:title" content="Porta: see what's on your ports, and stop it">
+<meta property="og:description" content="Every dev server you started, in the tray: port, project, stack and uptime. Open it or stop it in two clicks. For macOS and Windows.">
+<meta property="og:image" content="https://josebarbosa.dev/porta/img/icon-256.png">
+<meta property="og:url" content="https://josebarbosa.dev/porta/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+
+<style>
+  /* Night blue and cream, from the app icon: the room beyond the open door and
+     its frame. The accent is the door leaf's blue, as the tray draws it. */
+  :root {
+    --bg:      #0a1020;
+    --raised:  #111a2d;
+    --line:    #22304a;
+    --text:    #ecf1fb;
+    --dim:     #a7b4cd;
+    --faint:   #6d7a94;
+    --accent:  #66a6ff;
+    --on-acc:  #061430;
+    --danger:  #ff5f57;
+    --menu-bg: #2b2b2d;
+    --menu-tx: #f2f2f2;
+    --menu-dim:#9a9a9e;
+    --menu-hl: #0a64d6;
+    --menu-hl-tx: #ffffff;
+    --radius:  14px;
+    --measure: 46rem;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg:     #f6f8fd;
+      --raised: #eaf0fa;
+      --line:   #d4deee;
+      --text:   #0d1a33;
+      --dim:    #4a5a78;
+      --faint:  #7d8aa4;
+      --accent: #1d5fd1;
+      --on-acc: #ffffff;
+      --danger: #d72c22;
+      --menu-bg:#f6f6f6;
+      --menu-tx:#1b1b1b;
+      --menu-dim:#808085;
+      --menu-hl:#0a64d6;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.65 "Segoe UI Variable Text", "Segoe UI", system-ui,
+          -apple-system, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--measure); margin: 0 auto; padding: 0 20px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: "Cascadia Code", "SF Mono", Consolas, ui-monospace, monospace;
+    font-size: .88em;
+    background: var(--raised);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: .12em .42em;
+    white-space: nowrap;
+  }
+  pre {
+    font-family: "Cascadia Code", "SF Mono", Consolas, ui-monospace, monospace;
+    font-size: .84rem; line-height: 1.6;
+    background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px; margin: 0; overflow-x: auto; color: var(--dim);
+  }
+  pre b { color: var(--text); font-weight: 600; }
+
+  /* ------------------------------------------------------------------ hero */
+  header.wrap { text-align: center; padding-top: 84px; padding-bottom: 8px; }
+  header img.mark { width: 128px; height: 128px; filter: drop-shadow(0 18px 36px rgba(0,0,0,.35)); }
+  h1 {
+    font-size: clamp(2.7rem, 9vw, 4.2rem);
+    font-weight: 700;
+    letter-spacing: -.03em;
+    line-height: 1.04;
+    margin: 26px 0 0;
+  }
+  .tagline { font-size: clamp(1.12rem, 3.6vw, 1.45rem); color: var(--dim); margin: 14px auto 0; max-width: 32ch; }
+
+  .cta { margin: 36px 0 0; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .download {
+    display: inline-block;
+    font-weight: 650;
+    font-size: 1.04rem;
+    padding: 14px 28px;
+    border-radius: 11px;
+    background: var(--accent);
+    color: var(--on-acc);
+    transition: transform .12s ease, filter .12s ease;
+  }
+  .download:hover { text-decoration: none; transform: translateY(-1px); filter: brightness(1.07); }
+  .download.ghost, .os-mac .dl-win {
+    background: transparent; color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--line);
+  }
+  .os-mac .dl-mac { background: var(--accent); color: var(--on-acc); box-shadow: none; order: -1; }
+  .alt { margin: 18px 0 0; color: var(--faint); font-size: .94rem; }
+  .for-mac { display: none; }
+  .os-mac .for-win { display: none; }
+  .os-mac .for-mac { display: block; }
+
+  /* --------------------------------------------------------- the demo menu */
+  .demo { margin: 64px auto 0; display: flex; flex-direction: column; align-items: center; max-width: 820px; }
+  .menubar {
+    width: min(100%, 760px);
+    display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+    background: #1c1c1e; border-radius: 10px; padding: 6px 14px;
+    color: #e6e6e6; font: 13px/1 system-ui, -apple-system, sans-serif;
+    box-shadow: 0 0 0 1px rgba(127,127,127,.2);
+  }
+  .menubar .door { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 5px; background: rgba(255,255,255,.14); }
+  .menubar .door img { width: 18px; height: 18px; display: block; }
+  .menubar .count:empty { display: none; }
+  .menus {
+    width: min(100%, 760px);
+    margin-top: 6px;
+    display: flex; gap: 6px; justify-content: flex-end; align-items: flex-start; flex-wrap: wrap-reverse;
+  }
+  .menu {
+    width: min(100%, 330px);
+    min-width: 0;
+    background: var(--menu-bg);
+    color: var(--menu-tx);
+    border-radius: 11px;
+    padding: 5px;
+    font: 13.5px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+    box-shadow: 0 24px 60px rgba(0,0,0,.42), 0 0 0 1px rgba(127,127,127,.2);
+    text-align: left;
+    user-select: none;
+  }
+  .menu .row, .menu button.row {
+    all: unset; box-sizing: border-box; width: 100%;
+    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 12px; align-items: center; gap: 0 4px;
+    padding: 6px 9px; border-radius: 6px; cursor: default; white-space: nowrap;
+  }
+  .menu button.row { cursor: pointer; }
+  .menu button.row:hover, .menu button.row:focus-visible, .menu .row.open {
+    background: var(--menu-hl); color: var(--menu-hl-tx);
+  }
+  .menu button.row:hover .r, .menu .row.open .r { color: inherit; }
+  .menu .row > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; }
+  .menu .head, .menu .inert { color: var(--menu-dim); }
+  .menu .r { color: var(--menu-dim); padding-left: 14px; }
+  #sub { width: min(100%, 444px); }
+  .menu .arrow { color: var(--menu-dim); font-size: 12px; text-align: right; }
+  .menu .sep { height: 1px; background: rgba(127,127,127,.25); margin: 4px 9px; }
+  .menu .ico { width: 16px; height: 16px; display: block; }
+  .menu svg.ico { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .menu .danger svg.ico { color: var(--danger); }
+  .menu button.row:hover svg.ico { color: inherit; }
+  .menu .lan svg.ico { color: var(--accent); }
+  .ink { }
+  @media (prefers-color-scheme: dark) { .ink { filter: invert(1) hue-rotate(180deg); } }
+  :root[data-theme="dark"] .ink { filter: invert(1) hue-rotate(180deg); }
+  .hint { color: var(--faint); font-size: .86rem; margin-top: 14px; text-align: center; }
+  .hint button { all: unset; color: var(--accent); cursor: pointer; }
+  .hint button:hover { text-decoration: underline; }
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px); opacity: 0;
+    background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 9px;
+    font-size: .9rem; transition: opacity .18s ease, transform .18s ease; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ------------------------------------------------------------- sections */
+  section { padding: 76px 0 0; }
+  h2 { font-size: clamp(1.6rem, 5vw, 2.1rem); letter-spacing: -.02em; line-height: 1.15; margin: 0 0 10px; }
+  .lede { color: var(--dim); margin: 0 0 28px; max-width: 42ch; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr)); gap: 14px; }
+  .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 20px 18px; }
+  .card h3 { margin: 0 0 6px; font-size: 1.04rem; letter-spacing: -.01em; }
+  .card p { margin: 0; color: var(--dim); font-size: .95rem; line-height: 1.55; }
+  .logos { display: flex; gap: 8px; margin: 0 0 12px; }
+  .logos img { width: 22px; height: 22px; }
+
+  .faces { display: flex; gap: 14px; flex-wrap: wrap; }
+  .face { flex: 1 1 12rem; display: flex; gap: 14px; align-items: center;
+    background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .face .chip { flex: none; height: 52px; min-width: 52px; padding: 0 10px; border-radius: 10px; background: #1c1c1e;
+    display: flex; align-items: center; justify-content: center; gap: 4px; color: #eee; font-size: 15px; }
+  .face .chip img { width: 30px; height: 30px; }
+  .face b { display: block; font-size: .98rem; }
+  .face span { color: var(--dim); font-size: .9rem; line-height: 1.4; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .96rem; }
+  td { padding: 12px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  td:first-child { color: var(--dim); width: 34%; padding-right: 16px; }
+  tr:last-child td { border-bottom: 1px solid var(--line); }
+
+  .how { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 22px 6px; }
+  .how p { margin: 0 0 16px; color: var(--dim); }
+  .how p b { color: var(--text); font-weight: 600; }
+
+  footer { padding: 84px 0 56px; color: var(--faint); font-size: .9rem; text-align: center; }
+  footer a { color: var(--dim); }
+  footer small { display: block; margin-top: 8px; font-size: .8rem; }
+
+  @media (max-width: 680px) {
+    .menus { justify-content: center; }
+    .menu { width: 100%; }
+  }
+  @media (max-width: 520px) {
+    header.wrap { padding-top: 56px; }
+    td:first-child { width: 40%; }
+    code { white-space: normal; overflow-wrap: anywhere; }
+    .menu .r { padding-left: 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <img class="mark" src="img/icon-256.png" alt="" width="128" height="128">
+  <h1>Porta</h1>
+  <p class="tagline">See what's listening on your ports, from the tray, and stop it.</p>
+
+  <div class="cta">
+    <a class="download dl-win" href="https://github.com/kidchenko/porta/releases/latest/download/Porta-Setup.exe">Download for Windows</a>
+    <a class="download ghost dl-mac" href="https://github.com/kidchenko/porta/releases/latest/download/Porta.dmg">Download for macOS</a>
+  </div>
+  <p class="alt for-win">Windows 10 or later. Also for <a href="https://github.com/kidchenko/porta/releases/latest/download/Porta.dmg">macOS</a>.</p>
+  <p class="alt for-mac">or <code>brew install --cask kidchenko/tap/porta</code></p>
+</header>
+
+<div class="wrap demo" aria-label="Interactive preview of Porta's menu">
+  <div class="menubar" aria-hidden="true">
+    <span class="door"><img id="door" src="img/door-open.png" alt=""><span class="count" id="count">3</span></span>
+    <span id="clock">17:42</span>
+  </div>
+  <div class="menus">
+    <div class="menu" role="menu" id="sub" aria-label="Server actions"></div>
+    <div class="menu" role="menu" id="menu" aria-label="Porta">
+      <div class="row head"><span></span><span>Loading the preview…</span></div>
+    </div>
+  </div>
+  <p class="hint" id="hint">Try it: pick a server, copy its address, or stop it.</p>
+</div>
+
+<main class="wrap">
+  <section>
+    <h2>"Port 3000 is already in use"</h2>
+    <p class="lede">Then comes the hunt: <code>lsof -i :3000</code>, a pid, and a guess at which of six <code>node</code> processes it is. Porta is a door in the tray that already knows.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="logos"><img class="ink" src="img/nextjs.png" alt="Next.js"><img class="ink" src="img/django.png" alt="Django"><img src="img/postgresql.png" alt="PostgreSQL"><img src="img/docker.png" alt="Docker"></div>
+        <h3>Knows your stack</h3><p>Next.js, Vite, Django, Rails, Laravel, Spring, Postgres, Redis, Docker, or plain Node, Python, Go and Rust. About 90, each with its logo.</p>
+      </div>
+      <div class="card"><h3>Named after your project</h3><p>A server started in <code>~/projects/shop</code> reads as <b>shop</b>, so two Next.js apps never look alike.</p></div>
+      <div class="card"><h3>Two clicks to stop it</h3><p>Open it in the browser, copy its URL, show its folder, or stop it. With a few running, stop them all at once.</p></div>
+      <div class="card"><h3>Ready for your phone</h3><p>A server your network can reach shows the address to type on another device. Click it and it's copied.</p></div>
+      <div class="card"><h3>Your servers first</h3><p>What you started from a terminal is at the top. Spotify, VS Code and the OS's own ports are tucked away underneath.</p></div>
+      <div class="card"><h3>Small and quiet</h3><p>A 1 MB app with nothing else to install. In the tray it uses about 2 MB of memory and no measurable CPU.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reading the door</h2>
+    <p class="lede">One look at the tray says whether anything of yours is still running.</p>
+    <div class="faces">
+      <div class="face"><div class="chip"><img src="img/door-closed.png" alt=""></div><div><b>Shut</b><span>Nothing you started from a terminal is listening.</span></div></div>
+      <div class="face"><div class="chip"><img src="img/door-open.png" alt=""><span>2</span></div><div><b>Ajar</b><span>Your servers are up. On macOS, with how many beside it.</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it knows</h2>
+    <div class="how">
+      <p>Porta asks the OS which processes are listening on TCP ports: <b>GetExtendedTcpTable</b> on Windows, <b>lsof</b> on macOS. Then it reads each one's command line, working folder and start time.</p>
+      <p>A server is <b>yours</b> when a shell or terminal is among its parents: Terminal, iTerm2, Ghostty, Windows Terminal, VS Code's terminal and so on. The rest is filed under other apps and services.</p>
+      <p>Stopping asks nicely first. On macOS a server gets a SIGTERM so it can shut down cleanly, with Force quit if it won't. Porta never offers to stop the OS's own processes, and nothing it sees leaves your computer.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>From a terminal</h2>
+    <p class="lede">The same answers without opening the menu.</p>
+<pre><b>$ porta list</b>
+  3000  node     41859  2h 05m   LAN    terminal  shop
+  5173  node     42210  14m      local  terminal  docs
+  5432  postgres   917  3d 01h   local
+<b>$ porta stop 3000</b>
+Stopped node (pid 41859) on 3000.</pre>
+  </section>
+
+  <section>
+    <h2>Install</h2>
+    <table>
+      <tr><td>macOS</td><td><a href="https://github.com/kidchenko/porta/releases/latest/download/Porta.dmg">Porta.dmg</a> (Apple silicon and Intel)</td></tr>
+      <tr><td>Homebrew</td><td><code>brew install --cask kidchenko/tap/porta</code></td></tr>
+      <tr><td>Windows installer</td><td><a href="https://github.com/kidchenko/porta/releases/latest/download/Porta-Setup.exe">Porta-Setup.exe</a></td></tr>
+    </table>
+    <p class="alt" style="text-align:left">macOS 11 or later, or Windows 10 or later. It's about 1 MB and needs nothing else installed.</p>
+  </section>
+</main>
+
+<footer class="wrap">
+  Made by <a href="https://github.com/kidchenko">kidchenko</a>. MIT licensed.
+  <a href="https://github.com/kidchenko/porta">Source</a> and
+  <a href="https://github.com/kidchenko/porta/releases">releases</a> on GitHub.
+  <small>Logos from <a href="https://devicon.dev">Devicon</a>, glyphs from <a href="https://lucide.dev">Lucide</a>. Each logo is a trademark of its owner.</small>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  // Lead with the visitor's platform. Without script both buttons still work.
+  try {
+    var p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+    if (/mac/i.test(p)) document.body.classList.add("os-mac");
+  } catch (e) {}
+
+  // The demo menu: the same rows, actions and states as the app.
+  (function () {
+    var LUCIDE = {
+      globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+      copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+      wifi: '<path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/>',
+      folder: '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+      stop: '<circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+      power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+      terminal: '<path d="M12 19h8"/><path d="m4 17 6-6-6-6"/>',
+      house: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+      clock: '<path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/>'
+    };
+    function glyph(name) {
+      return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">' + LUCIDE[name] + '</svg>';
+    }
+    function logo(name, ink) {
+      return '<img class="ico' + (ink ? ' ink' : '') + '" src="img/' + name + '.png" alt="">';
+    }
+    function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+    function row(opts) {
+      var tag = opts.action ? "button" : "div";
+      var cls = "row" + (opts.cls ? " " + opts.cls : "");
+      return "<" + tag + ' class="' + cls + '"' + (opts.action ? ' data-action="' + opts.action + '"' : "") +
+        (opts.id != null ? ' data-id="' + opts.id + '"' : "") + ' role="menuitem">' +
+        "<span>" + (opts.icon || "") + "</span><span>" + esc(opts.text) + '</span><span class="r">' +
+        esc(opts.right || "") + '</span><span class="arrow">' + (opts.arrow ? "›" : "") + "</span></" + tag + ">";
+    }
+    var SEP = '<div class="sep"></div>';
+
+    var ALL = [
+      { port: 3000, project: "shop", hint: "next dev", logo: "nextjs", ink: true, stack: "Next.js", name: "node", pid: 41859, up: "2h 05m", lan: true, cmd: "node node_modules/.bin/next dev" },
+      { port: 8000, project: "api", hint: "manage.py runserver", logo: "django", ink: true, stack: "Django", name: "python3", pid: 40122, up: "1h 10m", lan: false, cmd: "python3 manage.py runserver" },
+      { port: 5173, project: "docs", hint: "vite", logo: "vitejs", stack: "Vite", name: "node", pid: 42210, up: "14m", lan: true, cmd: "node node_modules/.bin/vite --host" }
+    ];
+    var servers, open;
+    var menu = document.getElementById("menu");
+    var sub = document.getElementById("sub");
+    var door = document.getElementById("door");
+    var count = document.getElementById("count");
+    var hint = document.getElementById("hint");
+    var toast = document.getElementById("toast");
+
+    function reset() {
+      servers = ALL.slice();
+      open = 0;
+      paint();
+    }
+
+    function paint() {
+      var n = servers.length;
+      var head = n === 0 ? "Nothing from your terminals" : n === 1 ? "1 server from your terminals" : n + " servers from your terminals";
+      var h = row({ cls: "head", text: head }) + SEP;
+      if (n === 0) {
+        h += row({ cls: "inert", icon: glyph("terminal"), text: "Start a dev server and it shows up here" });
+      }
+      servers.forEach(function (s, i) {
+        var right = (s.lan ? "LAN · " : "") + s.up;
+        h += row({ action: "open-sub", id: i, cls: i === open ? "open" : "", icon: logo(s.logo, s.ink),
+          text: ":" + s.port + "  " + s.project + " · " + s.hint, right: right, arrow: true });
+      });
+      if (n > 1) h += row({ action: "stop-all", cls: "danger", icon: glyph("stop"), text: "Stop all " + n + " servers" });
+      h += SEP + row({ text: "Other apps and services", right: "4", arrow: true }) +
+        row({ text: "Settings", arrow: true }) + SEP +
+        row({ icon: glyph("power"), text: "Quit Porta", right: "⌘Q" });
+      menu.innerHTML = h;
+
+      var s = servers[open];
+      sub.style.display = s ? "" : "none";
+      if (s) {
+        var u = "localhost:" + s.port;
+        var t = row({ action: "browser", icon: glyph("globe"), text: "Open in browser", right: u }) +
+          row({ action: "copy-local", icon: glyph("copy"), text: "Copy URL" });
+        if (s.lan) t += row({ action: "copy-lan", cls: "lan", icon: glyph("wifi"), text: "Reachable from other devices at 192.168.1.110:" + s.port });
+        t += row({ action: "finder", icon: glyph("folder"), text: "Show in Finder", right: s.project }) + SEP +
+          row({ action: "stop", cls: "danger", icon: glyph("stop"), text: "Stop " + s.name, right: "pid " + s.pid }) + SEP +
+          row({ cls: "inert", icon: logo(s.logo, s.ink), text: s.stack + " · " + s.name }) +
+          row({ cls: "inert", icon: glyph("terminal"), text: s.cmd }) +
+          row({ cls: "inert", icon: glyph("clock"), text: "Running for " + s.up });
+        if (!s.lan) t += row({ cls: "inert", icon: glyph("house"), text: "Only reachable from this computer" });
+        sub.innerHTML = t;
+      }
+
+      door.src = n ? "img/door-open.png" : "img/door-closed.png";
+      count.textContent = n ? String(n) : "";
+      hint.innerHTML = n ? "Try it: pick a server, copy its address, or stop it."
+        : 'The door shuts when nothing of yours is running. <button type="button" id="again">Start them again</button>';
+      var again = document.getElementById("again");
+      if (again) again.addEventListener("click", reset);
+    }
+
+    var timer;
+    function say(text) {
+      toast.textContent = text;
+      toast.classList.add("show");
+      clearTimeout(timer);
+      timer = setTimeout(function () { toast.classList.remove("show"); }, 1600);
+    }
+    function copy(text) {
+      try { navigator.clipboard.writeText(text); } catch (e) {}
+      say("Copied " + text);
+    }
+
+    function stop(i) {
+      say("Stopped " + servers[i].name + " on port " + servers[i].port);
+      servers.splice(i, 1);
+      open = Math.min(open, servers.length - 1);
+      paint();
+    }
+
+    function act(e) {
+      var b = e.target.closest("button[data-action]");
+      if (!b) return;
+      var s = servers[open];
+      switch (b.dataset.action) {
+        case "open-sub": open = Number(b.dataset.id); paint(); break;
+        case "stop-all": say("Stopped " + servers.length + " servers"); servers = []; open = 0; paint(); break;
+        case "browser": say("Opens http://localhost:" + s.port + " in your browser"); break;
+        case "copy-local": copy("http://localhost:" + s.port); break;
+        case "copy-lan": copy("http://192.168.1.110:" + s.port); break;
+        case "finder": say("Shows ~/projects/" + s.project + " in Finder"); break;
+        case "stop": stop(open); break;
+      }
+    }
+    menu.addEventListener("click", act);
+    sub.addEventListener("click", act);
+
+    var now = new Date();
+    document.getElementById("clock").textContent =
+      String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+    reset();
+  })();
+</script>
+</body>
+</html>

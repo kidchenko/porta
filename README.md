@@ -9,6 +9,8 @@ On Windows and macOS.
 
 <sub><i>porta</i>: Portuguese for <i>door</i>, and close enough to <i>port</i></sub>
 
+**[josebarbosa.dev/porta](https://josebarbosa.dev/porta/)**
+
 </div>
 
 "Port 3000 is already in use." Then comes the hunt: `netstat -ano`, a pid,
@@ -104,14 +106,9 @@ porta stop 3000     # stop whatever is listening on 3000
 
 ### Windows
 
-```powershell
-winget install kidchenko.Porta
-# or
-choco install porta
-```
-
-Or grab [**Porta-Setup.exe**](https://github.com/kidchenko/porta/releases/latest/download/Porta-Setup.exe)
-directly. Each release also ships a portable `porta-x.y.z-x64.exe`.
+Download [**Porta-Setup.exe**](https://github.com/kidchenko/porta/releases/latest/download/Porta-Setup.exe).
+Each release also ships a portable `porta-x.y.z-x64.exe`. winget and
+Chocolatey packages are on the way.
 
 The binary isn't code-signed, so SmartScreen warns on first run: click **More
 info → Run anyway**.
@@ -174,8 +171,10 @@ The `release` workflow builds the DMG and the installer, publishes them to a
 GitHub Release, and fills the new version and checksums into the Chocolatey,
 winget and Homebrew manifests. Chocolatey is pushed when the `CHOCO_API_KEY`
 secret is set; submit the `manifest-winget` artifact to
-[microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs), and copy
-`manifest-homebrew` to `Casks/porta.rb` in `kidchenko/homebrew-tap`.
+[microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs). The cask in
+[kidchenko/homebrew-tap](https://github.com/kidchenko/homebrew-tap) is bumped
+by the tap's `bump` workflow: straight away when the `HOMEBREW_TAP_TOKEN`
+secret is set, or by its daily run.
 
 ## Not yet
 

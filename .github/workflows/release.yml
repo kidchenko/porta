@@ -156,3 +156,16 @@ jobs:
         run: |
           $pkg = Get-ChildItem dist\*.nupkg | Select-Object -First 1
           choco push $pkg.FullName --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY
+
+  # Optional: only runs when the HOMEBREW_TAP_TOKEN secret is set (a token that
+  # can run workflows on kidchenko/homebrew-tap). Without it, the tap's daily
+  # bump picks the release up instead.
+  homebrew:
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - name: Bump the cask in kidchenko/homebrew-tap
+        if: env.GH_TOKEN != ''
+        run: gh workflow run bump.yml --repo kidchenko/homebrew-tap -f cask=porta

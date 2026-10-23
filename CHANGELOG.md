@@ -1,8 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.0.1] - 2026-10-23
 
-First release, planned as 0.0.1.
+First release.
 
 - Tray app for Windows and macOS that lists what's listening on TCP ports: the
   port, the process, a hint from its command line ("vite", "next dev",
