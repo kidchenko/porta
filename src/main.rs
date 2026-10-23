@@ -10,13 +10,16 @@
 //! | `ports`           | listening sockets → processes; stopping one          |
 //! | `config`          | the persisted preferences                            |
 //! | `icon`            | draws the door, and the dots beside menu rows        |
-//! | `program_icon`    | the icon of the program behind a port                |
+//! | `art`             | the menu's logos and glyphs (Devicon, Lucide)        |
+//! | `tech`            | which framework, server or runtime is behind a port  |
+//! | `program_icon`    | the icon of the app behind a port                    |
 //! | `notify`          | toasts                                               |
 //! | `app`             | the tray icon and its menu                           |
 //! | `single_instance` | one copy at a time; relaunching summons it           |
 //! | `autostart`       | run at login                                         |
 
 mod app;
+mod art;
 mod autostart;
 mod config;
 mod icon;
@@ -25,6 +28,7 @@ mod notify;
 mod ports;
 mod program_icon;
 mod single_instance;
+mod tech;
 mod theme;
 mod util;
 
@@ -48,6 +52,13 @@ fn main() {
         Some("--dump-icons") => {
             let dir = args.get(1).map(String::as_str).unwrap_or("target/icons");
             std::process::exit(match icon::dump(dir) {
+                Ok(()) => 0,
+                Err(_) => 1,
+            });
+        }
+        Some("--dump-art") => {
+            let dir = args.get(1).map(String::as_str).unwrap_or("target/art");
+            std::process::exit(match art::dump(dir) {
                 Ok(()) => 0,
                 Err(_) => 1,
             });
@@ -85,13 +96,14 @@ fn cli(args: &[String]) -> i32 {
                     .map(|s| util::span(now.saturating_sub(s)))
                     .unwrap_or_default();
                 println!(
-                    "{:>6}  {:<width$}  {:>7}  {:<8}  {:<5}  {}",
+                    "{:>6}  {:<width$}  {:>7}  {:<8}  {:<5}  {:<8}  {}",
                     l.port,
                     l.name,
                     l.pid,
                     up,
                     if l.exposed { "LAN" } else { "local" },
-                    if l.from_terminal { "terminal" } else { "" }
+                    if l.from_terminal { "terminal" } else { "" },
+                    l.project().unwrap_or_default()
                 );
             }
             0
@@ -168,8 +180,21 @@ fn tray() {
     {
         use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
         event_loop.set_activation_policy(ActivationPolicy::Accessory);
+        event_loop.set_activate_ignoring_other_apps(false);
     }
     let proxy = event_loop.create_proxy();
+
+    // The loop's own timer can be lost while a menu is open on macOS (tao
+    // doesn't wake in the menu's run loop mode), and then Porta would never
+    // look again. A thread's nudge every second always gets through; the app
+    // decides whether a look is due.
+    let tick_proxy = proxy.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        if tick_proxy.send_event(UserEvent::Tick).is_err() {
+            return;
+        }
+    });
 
     let summon_proxy = proxy.clone();
     signal.watch(move || {
@@ -182,14 +207,18 @@ fn tray() {
 
     event_loop.run(move |event, _target, control_flow| {
         match event {
-            Event::NewEvents(StartCause::Init) => match App::new(proxy.clone()) {
-                Ok(a) => app = Some(a),
-                Err(e) => {
-                    lerror!("{e}");
-                    *control_flow = ControlFlow::Exit;
-                    return;
+            Event::NewEvents(StartCause::Init) => {
+                #[cfg(target_os = "macos")]
+                drop_launch_activation();
+                match App::new(proxy.clone()) {
+                    Ok(a) => app = Some(a),
+                    Err(e) => {
+                        lerror!("{e}");
+                        *control_flow = ControlFlow::Exit;
+                        return;
+                    }
                 }
-            },
+            }
             Event::UserEvent(e) => {
                 if let Some(a) = app.as_mut() {
                     if a.handle(e) == Flow::Exit {
@@ -199,16 +228,24 @@ fn tray() {
                     }
                 }
             }
-            Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
-                if let Some(a) = app.as_mut() {
-                    a.tick();
-                }
-            }
             _ => {}
         }
 
-        if let Some(a) = app.as_ref() {
-            *control_flow = ControlFlow::WaitUntil(a.next_wake());
+        if app.is_some() {
+            *control_flow = ControlFlow::Wait;
         }
     });
+}
+
+/// tao asks macOS to activate the app as it finishes launching. A menu bar
+/// app has nothing to bring forward, and on macOS 26 the request stays
+/// pending until the first click on the door, then completes while the menu
+/// is open and closes it. Withdraw it before anything is shown.
+#[cfg(target_os = "macos")]
+fn drop_launch_activation() {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSApplication;
+    if let Some(mtm) = MainThreadMarker::new() {
+        NSApplication::sharedApplication(mtm).deactivate();
+    }
 }

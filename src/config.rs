@@ -14,6 +14,9 @@ pub struct Config {
     /// How often to look again. Listing sockets is cheap; this is about not
     /// rebuilding a menu nobody is looking at more often than useful.
     pub refresh_seconds: u64,
+    /// macOS: how many of your servers are up, beside the door in the menu
+    /// bar. Nothing is shown while there are none.
+    pub show_count: bool,
 }
 
 impl Default for Config {
@@ -21,6 +24,7 @@ impl Default for Config {
         Self {
             show_system: false,
             refresh_seconds: 5,
+            show_count: true,
         }
     }
 }

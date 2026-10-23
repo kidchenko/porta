@@ -1,8 +1,9 @@
 //! Whether the Windows taskbar is dark, so the door can be drawn in a colour
-//! that shows up against it. macOS needs none of this: the menu bar icon is a
+//! that shows up against it, and whether menus are, so the glyphs and black
+//! logos in them can be. The macOS menu bar icon needs none of this: it is a
 //! template image and AppKit tints it.
 
-pub use imp::taskbar_is_dark;
+pub use imp::{menus_are_dark, taskbar_is_dark};
 
 // ---------------------------------------------------------------------------
 // Windows
@@ -30,6 +31,12 @@ mod imp {
         read_dword(PERSONALIZE, "SystemUsesLightTheme")
             .map(|v| v == 0)
             .unwrap_or(true)
+    }
+
+    /// Tray menus are drawn light on Windows whatever the theme: muda only
+    /// darkens window menu bars.
+    pub fn menus_are_dark() -> bool {
+        false
     }
 
     fn read_dword(subkey: &str, value: &str) -> Option<u32> {
@@ -76,5 +83,13 @@ mod imp {
     /// tints for the menu bar itself.
     pub fn taskbar_is_dark() -> bool {
         false
+    }
+
+    /// Dark Mode, or Auto while it is dark: both set AppleInterfaceStyle.
+    pub fn menus_are_dark() -> bool {
+        use objc2_foundation::{NSString, NSUserDefaults};
+        NSUserDefaults::standardUserDefaults()
+            .stringForKey(&NSString::from_str("AppleInterfaceStyle"))
+            .is_some_and(|s| s.to_string().eq_ignore_ascii_case("dark"))
     }
 }

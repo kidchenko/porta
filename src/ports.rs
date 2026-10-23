@@ -29,10 +29,16 @@ pub struct Listener {
     pub command: String,
     /// The executable's full path, for its icon. Empty where unknown.
     pub path: String,
+    /// The directory it runs in, which is usually the project's. Empty where
+    /// unknown (always, so far, on Windows).
+    pub cwd: String,
     /// When the process started, as Unix time.
     pub started: Option<u64>,
     /// Bound to something other than loopback: other machines can connect.
     pub exposed: bool,
+    /// The one network address it is bound to, where it is bound to one
+    /// rather than to all of them (`0.0.0.0`, `::`).
+    pub bound: Option<IpAddr>,
     /// Part of the OS rather than something you started.
     pub system: bool,
     /// A shell or terminal is among its ancestors: you started it by hand.
@@ -43,8 +49,60 @@ impl Listener {
     pub fn hint(&self) -> Option<String> {
         hint(&self.command, &self.name)
     }
+
+    /// The project it serves, by its folder's name: "juanalist" for a server
+    /// started in ~/projects/juanalist. `None` for the home folder or `/`,
+    /// where daemons and apps run and the name says nothing.
+    pub fn project(&self) -> Option<String> {
+        project(&self.cwd)
+    }
+
+    /// The address other devices reach it at: the one it is bound to, or,
+    /// listening on all of them, this machine's address on the LAN (`lan`).
+    /// `None` when it only listens on loopback.
+    pub fn network_url(&self, lan: Option<IpAddr>) -> Option<String> {
+        if !self.exposed {
+            return None;
+        }
+        Some(match self.bound.or(lan)? {
+            IpAddr::V4(a) => format!("http://{a}:{}", self.port),
+            IpAddr::V6(a) => format!("http://[{a}]:{}", self.port),
+        })
+    }
 }
 
+/// This machine's address on the network: the source address of its default
+/// route. Connecting a UDP socket only picks a route; nothing is sent.
+pub fn lan_address() -> Option<IpAddr> {
+    let sock = std::net::UdpSocket::bind(("0.0.0.0", 0)).ok()?;
+    sock.connect(("192.0.2.1", 9)).ok()?;
+    let ip = sock.local_addr().ok()?.ip();
+    (!ip.is_unspecified() && !ip.is_loopback()).then_some(ip)
+}
+
+fn project(cwd: &str) -> Option<String> {
+    let trimmed = cwd.trim_end_matches(['/', '\\']);
+    if trimmed.is_empty() || trimmed.ends_with(':') {
+        return None;
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    if !home.is_empty() && trimmed == home.trim_end_matches(['/', '\\']) {
+        return None;
+    }
+    let name = base_name(trimmed);
+    // A system folder isn't a project.
+    if ["system32", "tmp", "private", "usr", "bin", "sbin"]
+        .contains(&name.to_ascii_lowercase().as_str())
+    {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+#[cfg(target_os = "macos")]
+pub use imp::force_stop;
 pub use imp::{scan, stop};
 
 /// One socket as the OS reports it, before folding.
@@ -56,15 +114,42 @@ struct Socket {
     addr: IpAddr,
 }
 
-/// Fold sockets into one entry per (port, pid), sorted by port. A server is
-/// exposed if any of its sockets is.
-fn fold(sockets: &[Socket]) -> Vec<(u16, u32, bool)> {
-    let mut by: BTreeMap<(u16, u32), bool> = BTreeMap::new();
+/// One (port, pid) after folding its sockets together.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Folded {
+    port: u16,
+    pid: u32,
+    /// Any of its sockets is reachable from the network.
+    exposed: bool,
+    /// The specific address it is reachable at, unless one of its sockets
+    /// listens on all of them.
+    bound: Option<IpAddr>,
+}
+
+/// Fold sockets into one entry per (port, pid), sorted by port.
+fn fold(sockets: &[Socket]) -> Vec<Folded> {
+    let mut by: BTreeMap<(u16, u32), (bool, bool, Option<IpAddr>)> = BTreeMap::new();
     for s in sockets {
-        let exposed = !s.addr.is_loopback();
-        *by.entry((s.port, s.pid)).or_default() |= exposed;
+        let (exposed, everywhere, bound) = by.entry((s.port, s.pid)).or_default();
+        if s.addr.is_loopback() {
+            continue;
+        }
+        *exposed = true;
+        if s.addr.is_unspecified() {
+            *everywhere = true;
+        } else if bound.is_none() || s.addr.is_ipv4() {
+            // IPv4 first: it's the one people type.
+            *bound = Some(s.addr);
+        }
     }
-    by.into_iter().map(|((p, pid), e)| (p, pid, e)).collect()
+    by.into_iter()
+        .map(|((port, pid), (exposed, everywhere, bound))| Folded {
+            port,
+            pid,
+            exposed,
+            bound: if everywhere { None } else { bound },
+        })
+        .collect()
 }
 
 /// Processes that are part of the OS. Their ports are hidden unless asked for:
@@ -192,6 +277,23 @@ fn base_name(path: &str) -> &str {
 /// `None` when the command line adds nothing to the name.
 pub fn hint(command: &str, name: &str) -> Option<String> {
     let w = words(command);
+
+    // A process that renamed itself: Next.js shows up as
+    // "next-server (v16.1.5)", with no arguments left to read. The new name,
+    // without its version, is the best there is.
+    if let Some(first) = w.first() {
+        if !first.contains(['/', '\\']) && exe_key(first) != exe_key(name) {
+            let title: String = command
+                .split('(')
+                .next()
+                .unwrap_or(command)
+                .trim()
+                .to_string();
+            if !title.is_empty() && exe_key(&title) != exe_key(name) {
+                return Some(shorten(title));
+            }
+        }
+    }
     let args = w.get(1..).unwrap_or(&[]);
 
     // node .../node_modules/vite/bin/vite.js → "vite"; also @scope/pkg, and
@@ -277,7 +379,7 @@ fn shorten(s: String) -> String {
 // ---------------------------------------------------------------------------
 #[cfg(windows)]
 mod imp {
-    use super::{fold, is_system_name, under_shell, Listener, Socket};
+    use super::{fold, is_system_name, under_shell, Folded, Listener, Socket};
     use std::collections::HashMap;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use windows::core::PWSTR;
@@ -466,43 +568,55 @@ mod imp {
         let me = std::process::id();
         fold(&sockets())
             .into_iter()
-            .filter(|(_, pid, _)| *pid != me)
-            .map(|(port, pid, exposed)| {
-                let exe = procs.get(&pid).map(|(_, n)| n.clone()).unwrap_or_default();
-                let name = exe
-                    .strip_suffix(".exe")
-                    .or_else(|| exe.strip_suffix(".EXE"))
-                    .unwrap_or(&exe)
-                    .to_string();
-                let opened = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }
-                    .ok()
-                    .map(Process);
-                let (command, path, started) = match &opened {
-                    Some(p) => (
-                        command_line(p).unwrap_or_default(),
-                        image_path(p).unwrap_or_default(),
-                        started(p),
-                    ),
-                    None => (String::new(), String::new(), None),
-                };
-                Listener {
-                    port,
-                    pid,
-                    // Pids 0 and 4 are the kernel's; a process we may not even
-                    // look at belongs to another account, often SYSTEM.
-                    system: pid <= 4 || opened.is_none() || is_system_name(&name),
-                    name: if name.is_empty() {
-                        format!("pid {pid}")
-                    } else {
-                        name
-                    },
-                    command,
-                    path,
-                    started,
-                    exposed,
-                    from_terminal: under_shell(&procs, pid),
-                }
-            })
+            .filter(|f| f.pid != me)
+            .map(
+                |Folded {
+                     port,
+                     pid,
+                     exposed,
+                     bound,
+                 }| {
+                    let exe = procs.get(&pid).map(|(_, n)| n.clone()).unwrap_or_default();
+                    let name = exe
+                        .strip_suffix(".exe")
+                        .or_else(|| exe.strip_suffix(".EXE"))
+                        .unwrap_or(&exe)
+                        .to_string();
+                    let opened =
+                        unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }
+                            .ok()
+                            .map(Process);
+                    let (command, path, started) = match &opened {
+                        Some(p) => (
+                            command_line(p).unwrap_or_default(),
+                            image_path(p).unwrap_or_default(),
+                            started(p),
+                        ),
+                        None => (String::new(), String::new(), None),
+                    };
+                    Listener {
+                        port,
+                        pid,
+                        // Pids 0 and 4 are the kernel's; a process we may not even
+                        // look at belongs to another account, often SYSTEM.
+                        system: pid <= 4 || opened.is_none() || is_system_name(&name),
+                        name: if name.is_empty() {
+                            format!("pid {pid}")
+                        } else {
+                            name
+                        },
+                        command,
+                        path,
+                        // Another process's working directory is only in its
+                        // PEB; not read yet.
+                        cwd: String::new(),
+                        started,
+                        exposed,
+                        bound,
+                        from_terminal: under_shell(&procs, pid),
+                    }
+                },
+            )
             .collect()
     }
 
@@ -524,7 +638,7 @@ mod imp {
 // anyway.
 #[cfg(target_os = "macos")]
 mod imp {
-    use super::{fold, is_system_name, under_shell, Listener, Socket};
+    use super::{fold, is_system_name, under_shell, Folded, Listener, Socket};
     use std::collections::HashMap;
     use std::net::IpAddr;
 
@@ -572,6 +686,20 @@ mod imp {
         (sockets, names)
     }
 
+    /// `lsof -d cwd -Fpn` → pid → working directory.
+    pub(super) fn parse_cwds(out: &str) -> HashMap<u32, String> {
+        let mut cwds = HashMap::new();
+        let mut pid = None;
+        for line in out.lines() {
+            if let Some(p) = line.strip_prefix('p') {
+                pid = p.parse().ok();
+            } else if let (Some(dir), Some(p)) = (line.strip_prefix('n'), pid) {
+                cwds.insert(p, dir.to_string());
+            }
+        }
+        cwds
+    }
+
     /// "[[dd-]hh:]mm:ss" → seconds.
     pub(super) fn parse_etime(s: &str) -> Option<u64> {
         let (days, rest) = match s.split_once('-') {
@@ -609,7 +737,7 @@ mod imp {
         }
 
         let mut details: HashMap<u32, (Option<u64>, String)> = HashMap::new();
-        let pids: Vec<String> = folded.iter().map(|(_, p, _)| p.to_string()).collect();
+        let pids: Vec<String> = folded.iter().map(|f| f.pid.to_string()).collect();
         if !pids.is_empty() {
             let now = crate::util::now_unix();
             let out = run(
@@ -630,33 +758,83 @@ mod imp {
             }
         }
 
+        let mut cwds = if pids.is_empty() {
+            HashMap::new()
+        } else {
+            parse_cwds(&run(
+                "/usr/sbin/lsof",
+                &["-a", "-d", "cwd", "-Fpn", "-p", &pids.join(",")],
+            ))
+        };
+
         folded
             .into_iter()
-            .filter(|(_, pid, _)| *pid != me)
-            .map(|(port, pid, exposed)| {
-                let name = names
-                    .get(&pid)
-                    .cloned()
-                    .unwrap_or_else(|| format!("pid {pid}"));
-                let (started, command) = details.remove(&pid).unwrap_or_default();
-                Listener {
-                    port,
-                    pid,
-                    system: is_system_name(&name),
-                    name,
-                    command,
-                    path: String::new(),
-                    started,
-                    exposed,
-                    from_terminal: under_shell(&parents, pid),
-                }
-            })
+            .filter(|f| f.pid != me)
+            .map(
+                |Folded {
+                     port,
+                     pid,
+                     exposed,
+                     bound,
+                 }| {
+                    let path = exe_path(pid);
+                    // lsof cuts names at 15 characters ("com.docker.back"); the
+                    // path has the whole of it.
+                    let name = match path.rsplit('/').next() {
+                        Some(n) if !n.is_empty() => n.to_string(),
+                        _ => names
+                            .get(&pid)
+                            .cloned()
+                            .unwrap_or_else(|| format!("pid {pid}")),
+                    };
+                    let (started, command) = details.remove(&pid).unwrap_or_default();
+                    Listener {
+                        port,
+                        pid,
+                        system: is_system_name(&name),
+                        name,
+                        command,
+                        path,
+                        cwd: cwds.remove(&pid).unwrap_or_default(),
+                        started,
+                        exposed,
+                        bound,
+                        from_terminal: under_shell(&parents, pid),
+                    }
+                },
+            )
             .collect()
+    }
+
+    /// The executable's full path; empty for another user's process.
+    fn exe_path(pid: u32) -> String {
+        let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+        let n = unsafe {
+            libc::proc_pidpath(
+                pid as libc::c_int,
+                buf.as_mut_ptr().cast(),
+                buf.len() as u32,
+            )
+        };
+        if n <= 0 {
+            return String::new();
+        }
+        buf.truncate(n as usize);
+        String::from_utf8_lossy(&buf).into_owned()
     }
 
     pub fn stop(pid: u32) -> Result<(), String> {
         // SIGTERM: a dev server gets to shut down cleanly.
-        if unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) } == 0 {
+        signal(pid, libc::SIGTERM)
+    }
+
+    /// SIGKILL, for a server that ignores being asked.
+    pub fn force_stop(pid: u32) -> Result<(), String> {
+        signal(pid, libc::SIGKILL)
+    }
+
+    fn signal(pid: u32, sig: libc::c_int) -> Result<(), String> {
+        if unsafe { libc::kill(pid as libc::pid_t, sig) } == 0 {
             Ok(())
         } else {
             Err(std::io::Error::last_os_error().to_string())
@@ -675,6 +853,13 @@ mod imp {
             assert_eq!(n[&501], "node");
             assert!(s[0].addr.is_unspecified());
             assert!(s[2].addr.is_loopback());
+        }
+
+        #[test]
+        fn cwds() {
+            let c = parse_cwds("p41859\nfcwd\nn/Users/me/projects/juanalist\np7\nfcwd\nn/\n");
+            assert_eq!(c[&41859], "/Users/me/projects/juanalist");
+            assert_eq!(c[&7], "/");
         }
 
         #[test]
@@ -708,7 +893,31 @@ mod tests {
             s(5173, 2, "127.0.0.1"),
             s(80, 3, "192.168.1.5"),
         ]);
-        assert_eq!(f, vec![(80, 3, true), (3000, 1, false), (5173, 2, true)]);
+        let summary: Vec<_> = f
+            .iter()
+            .map(|f| (f.port, f.pid, f.exposed, f.bound))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                (80, 3, true, Some("192.168.1.5".parse().unwrap())),
+                (3000, 1, false, None),
+                (5173, 2, true, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn projects_are_folders_that_say_something() {
+        assert_eq!(
+            project("/Users/me/projects/juanalist").as_deref(),
+            Some("juanalist")
+        );
+        assert_eq!(project(r"C:\code\api\").as_deref(), Some("api"));
+        assert_eq!(project("/"), None);
+        assert_eq!(project(""), None);
+        assert_eq!(project(r"C:\"), None);
+        assert_eq!(project(r"C:\Windows\System32"), None);
     }
 
     #[test]
@@ -739,6 +948,11 @@ mod tests {
             Some("manage.py runserver")
         );
         assert_eq!(h("node server.js", "node").as_deref(), Some("server.js"));
+        assert_eq!(
+            h("next-server (v16.1.5) ", "node").as_deref(),
+            Some("next-server")
+        );
+        assert_eq!(h("node", "node"), None);
         assert_eq!(h("npm run dev", "npm").as_deref(), Some("run dev"));
         assert_eq!(h("postgres", "postgres"), None);
         assert_eq!(h(r"C:\x\postgres.exe -D data", "postgres"), None);

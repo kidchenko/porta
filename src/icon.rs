@@ -22,6 +22,13 @@ pub const EDGE: u32 = 32;
 const GRID: f32 = 32.0;
 const SS: u32 = 4;
 
+/// The tray door's share of the canvas. Porta sits beside Sua Vez, Café and
+/// Cota in the menu bar, so they share one keyline: centred, about 26 of 32 px
+/// tall, with a 2.4 px stroke.
+const TRAY_SCALE: f32 = 0.875;
+/// Half the outline's width, in design units, so it is 1.2 px once scaled.
+const STROKE: f32 = 1.2 / TRAY_SCALE;
+
 type Rgb = [f32; 3];
 
 /// RGBA8, `edge` x `edge`, straight alpha.
@@ -33,7 +40,12 @@ pub fn render(face: Face, dark_taskbar: bool, edge: u32) -> Vec<u8> {
     } else {
         ([0.12, 0.12, 0.12], [0.12, 0.42, 0.86])
     };
-    supersample(edge, |x, y| sample(face, x, y, line, panel))
+    supersample(edge, |x, y| {
+        // About the frame's centre.
+        let x = 16.0 + (x - 16.0) / TRAY_SCALE;
+        let y = 16.5 + (y - 16.0) / TRAY_SCALE;
+        sample(face, x, y, line, panel)
+    })
 }
 
 fn supersample(edge: u32, f: impl Fn(f32, f32) -> Option<Rgb>) -> Vec<u8> {
@@ -83,7 +95,7 @@ fn leaf(x: f32, y: f32) -> f32 {
 }
 
 fn sample(face: Face, x: f32, y: f32, line: Rgb, panel: Rgb) -> Option<Rgb> {
-    let outline = frame(x, y).abs() - 1.3 <= 0.0;
+    let outline = frame(x, y).abs() - STROKE <= 0.0;
     match face {
         Face::Closed => {
             let knob = len(x - 21.5, y - 17.5) - 1.7 <= 0.0;
@@ -189,15 +201,6 @@ pub fn dot(kind: Dot) -> Vec<u8> {
     };
     supersample(32, |x, y| {
         (len(x - 16.0, y - 16.0) - 6.5 <= 0.0).then_some(colour)
-    })
-}
-
-/// The mark beside "Stop": a red square, the stop symbol. It is the one item
-/// with a consequence, so the eye should find it without reading.
-pub fn stop_mark() -> Vec<u8> {
-    let red: Rgb = [0.90, 0.26, 0.24];
-    supersample(32, |x, y| {
-        (rounded_box(x, y, 16.0, 16.0, 7.5, 7.5, 2.0) <= 0.0).then_some(red)
     })
 }
 

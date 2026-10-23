@@ -13,6 +13,8 @@ name = "porta"
 path = "src/main.rs"
 
 [dependencies]
+# Decodes the menu's icons (see art.rs). Already in the tree via tray-icon.
+png        = "0.18"
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 tao        = "0.37"
@@ -49,9 +51,15 @@ winresource = "0.1"
 # ---------------------------------------------------------------------------
 # macOS
 # ---------------------------------------------------------------------------
-# `libc` is for localtime_r in the log stamp. Everything else is std.
+# `libc` is for localtime_r in the log stamp and proc_pidpath. objc2 is
+# already in the tree via tao and tray-icon; AppKit is for apps' own icons
+# (program_icon.rs) and withdrawing tao's launch activation (main.rs),
+# Foundation for whether menus are dark (theme.rs) or open (app.rs).
 [target.'cfg(target_os = "macos")'.dependencies]
-libc = "0.2"
+libc             = "0.2"
+objc2            = "0.6"
+objc2-app-kit    = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "NSApplication", "NSBitmapImageRep", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSResponder", "NSWorkspace"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "NSGeometry", "NSObjCRuntime", "NSRunLoop", "NSString", "NSUserDefaults"] }
 
 [profile.release]
 opt-level     = "z"

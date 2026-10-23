@@ -32,31 +32,46 @@ Click it, with either button, to open the menu.
 ## The menu
 
 ```
-     2 servers from your terminals
-     ──────────────────────────────────────────
-[js] :3000  next dev                 2h 05m  ▸
-[py] :8000  manage.py runserver  LAN · 1h 10m ▸
-     ──────────────────────────────────────────
-     Other apps and services             11  ▸
-     Settings                                ▸
-     ──────────────────────────────────────────
-     Quit Porta
+       2 servers from your terminals
+       ──────────────────────────────────────────
+[next] :3000  shop · next dev              2h 05m  ▸
+[dj]   :8000  api · manage.py runserver  LAN · 1h 10m ▸
+  ■    Stop all 2 servers
+       ──────────────────────────────────────────
+       Other apps and services             11  ▸
+       Settings                                ▸
+       ──────────────────────────────────────────
+  ⏻    Quit Porta                            ⌘Q
 ```
 
-Each row has the program's own icon, the port, and what it was started as:
-a hint from its command line, like "next dev" or "manage.py runserver", or
-the program's name when there's nothing more telling. On the right, **LAN**
-means it's reachable from other devices on your network, not just this
-computer, and then how long it has been running. On macOS rows get a dot
-instead of the program's icon.
+Each row has a logo, the port, the project folder it runs in (macOS), and
+what it was started as: a hint from its command line, like "next dev" or
+"manage.py runserver", or the program's name when there's nothing more
+telling. On the right, **LAN** means it's reachable
+from other devices on your network, not just this computer, and then how long
+it has been running.
+
+The logo is the technology behind the port, read off the process: Next.js,
+Vite, Django, Rails, Laravel, Spring Boot, Postgres, Redis, Docker, or the
+runtime itself (Node, Python, Go, Rust, Java, .NET...), about 90 in all. Desktop
+apps get their own icon; anything else gets a dot. With two or more servers
+up, **Stop all** ends them in one go.
 
 Each port opens a submenu:
 
 | | |
 |---|---|
 | **Open in browser** | `http://localhost:<port>` in your default browser. |
+| **Copy URL** | `http://localhost:<port>`, for pasting elsewhere. |
+| **Reachable from other devices at 192.168.1.110:3000** | Only for servers reachable from your network. Click it to copy the address, for a phone or another computer. |
+| **Show in Finder** | macOS: the project folder the server runs in. |
 | **Stop node** | Ends the process. On macOS it gets a SIGTERM, so it can shut down cleanly. |
-| The command line, the program and its uptime, and whether it's reachable from your network | For telling two `node` processes apart. |
+| **Force quit** | macOS: SIGKILL, for a server that ignores being asked. |
+| The stack, the command line and its uptime | For telling two `node` processes apart. |
+
+On macOS, the number of your servers that are up sits next to the door in the
+menu bar, and **⌘R** refreshes, **⌘,** opens the settings file and **⌘Q**
+quits while the menu is open.
 
 "From your terminals" means a shell or terminal app is among the process's
 parents: Windows Terminal, WezTerm, PowerShell, bash, zsh, VS Code's terminal
@@ -70,6 +85,7 @@ along with services such as a local Postgres or nginx.
 |---|---|
 | **Show system ports** | Also list the OS's own listeners. Porta never offers to stop those. |
 | **Run at login** | Per-user, no admin. |
+| **Show count in menu bar** | macOS: the number beside the door. |
 | **Refresh now** | Look again now. Porta looks every 5 seconds anyway. |
 | **Edit settings file…** | Opens `config.json`. |
 
@@ -130,7 +146,8 @@ processes without root, which is the set you can stop anyway.
 ```json
 {
   "showSystem": false,
-  "refreshSeconds": 5
+  "refreshSeconds": 5,
+  "showCount": true
 }
 ```
 
@@ -163,10 +180,13 @@ secret is set; submit the `manifest-winget` artifact to
 ## Not yet
 
 - UDP ports.
-- The project folder a server runs in, next to its command line.
+- The project folder on Windows.
 - Stopping a process another account or an elevated terminal started; that
   needs Porta itself to run elevated.
 
 ## License
 
-MIT
+MIT. The menu's logos are from [Devicon](https://devicon.dev) (MIT) and its
+glyphs from [Lucide](https://lucide.dev) (ISC); see
+[assets/icons/LICENSES.md](assets/icons/LICENSES.md). Each logo is a trademark
+of its owner.

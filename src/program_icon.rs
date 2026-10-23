@@ -3,8 +3,11 @@
 //! icon is quicker than reading its name.
 //!
 //! Windows asks the shell for the executable's small icon and reads its pixels
-//! out. macOS has no equivalent without AppKit bindings, so rows there use a
-//! drawn dot instead (see `icon::dot`).
+//! out. macOS asks NSWorkspace for the icon of the app bundle the executable
+//! lives in; a bare Unix binary has only the generic one, so there is none.
+//!
+//! Dev servers rarely have an icon of their own (`node` is just `node`): the
+//! menu tries `tech` and its logos first, and comes here for desktop apps.
 
 pub use imp::load;
 
@@ -114,8 +117,103 @@ mod imp {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    pub fn load(_exe: &str) -> Option<(Vec<u8>, u32)> {
-        None
+    use objc2::AnyThread;
+    use objc2_app_kit::{
+        NSBitmapFormat, NSBitmapImageRep, NSCompositingOperation, NSDeviceRGBColorSpace,
+        NSGraphicsContext, NSWorkspace,
+    };
+    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+
+    /// Pixels on a side: menus draw icons at 16 pt, and this is 16 pt @2x.
+    const EDGE: u32 = 32;
+
+    /// The icon of the app bundle around `exe`, as straight-alpha RGBA.
+    pub fn load(exe: &str) -> Option<(Vec<u8>, u32)> {
+        let bundle = app_bundle(exe)?;
+        let icon = NSWorkspace::sharedWorkspace().iconForFile(&NSString::from_str(bundle));
+        let rep = unsafe {
+            NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bitmapFormat_bytesPerRow_bitsPerPixel(
+                NSBitmapImageRep::alloc(),
+                std::ptr::null_mut(),
+                EDGE as isize,
+                EDGE as isize,
+                8,
+                4,
+                true,
+                false,
+                NSDeviceRGBColorSpace,
+                // Premultiplied: a bitmap context can't draw into anything else.
+                NSBitmapFormat::empty(),
+                (EDGE * 4) as isize,
+                32,
+            )
+        }?;
+        let ctx = NSGraphicsContext::graphicsContextWithBitmapImageRep(&rep)?;
+        let rect = NSRect::new(
+            NSPoint::new(0.0, 0.0),
+            NSSize::new(EDGE as f64, EDGE as f64),
+        );
+        NSGraphicsContext::saveGraphicsState_class();
+        NSGraphicsContext::setCurrentContext(Some(&ctx));
+        icon.drawInRect_fromRect_operation_fraction(
+            rect,
+            NSRect::ZERO,
+            NSCompositingOperation::SourceOver,
+            1.0,
+        );
+        ctx.flushGraphics();
+        NSGraphicsContext::restoreGraphicsState_class();
+
+        let data = rep.bitmapData();
+        if data.is_null() {
+            return None;
+        }
+        let stride = rep.bytesPerRow() as usize;
+        let row = (EDGE * 4) as usize;
+        let mut px = Vec::with_capacity(row * EDGE as usize);
+        for y in 0..EDGE as usize {
+            px.extend_from_slice(unsafe { std::slice::from_raw_parts(data.add(y * stride), row) });
+        }
+        // Back to straight alpha, which is what menus take.
+        for p in px.chunks_mut(4) {
+            let a = p[3] as u32;
+            if a != 0 && a != 255 {
+                for c in &mut p[..3] {
+                    *c = ((*c as u32 * 255 + a / 2) / a).min(255) as u8;
+                }
+            }
+        }
+        Some((px, EDGE))
+    }
+
+    /// "/Applications/Docker.app/Contents/MacOS/com.docker.backend" →
+    /// "/Applications/Docker.app". The outermost bundle, so a helper app
+    /// nested inside another shows the app people know.
+    pub(super) fn app_bundle(exe: &str) -> Option<&str> {
+        let end = exe.find(".app/")? + ".app".len();
+        Some(&exe[..end])
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    #[test]
+    fn bundles() {
+        use super::imp::app_bundle;
+        assert_eq!(
+            app_bundle("/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)"),
+            Some("/Applications/Visual Studio Code.app")
+        );
+        assert_eq!(app_bundle("/opt/homebrew/bin/node"), None);
+    }
+
+    #[test]
+    fn finder_has_an_icon() {
+        let (px, edge) =
+            super::load("/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder")
+                .expect("an icon");
+        assert_eq!(px.len(), (edge * edge * 4) as usize);
+        assert!(px.chunks(4).any(|p| p[3] == 255), "drawn, not blank");
     }
 }
 
