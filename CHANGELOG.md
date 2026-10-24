@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- "Check for updates…" in the menu opens Porta's page with the installed
+  version, and the page tells you whether a newer one is out. The app itself
+  still never touches the network.
+
 ## [0.0.1] - 2026-10-23
 
 First release.

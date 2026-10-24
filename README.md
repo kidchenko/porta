@@ -42,6 +42,7 @@ Click it, with either button, to open the menu.
        ──────────────────────────────────────────
        Other apps and services             11  ▸
        Settings                                ▸
+       Check for updates…
        ──────────────────────────────────────────
   ⏻    Quit Porta                            ⌘Q
 ```
@@ -90,6 +91,9 @@ along with services such as a local Postgres or nginx.
 | **Show count in menu bar** | macOS: the number beside the door. |
 | **Refresh now** | Look again now. Porta looks every 5 seconds anyway. |
 | **Edit settings file…** | Opens `config.json`. |
+
+**Check for updates…** opens Porta's page with the version you have, and the
+page asks GitHub whether there's a newer one. Porta itself never goes online.
 
 Running `porta` again while it's in the tray makes it tell you what's
 listening.

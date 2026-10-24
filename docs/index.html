@@ -115,6 +115,29 @@
   .for-mac { display: none; }
   .os-mac .for-win { display: none; }
   .os-mac .for-mac { display: block; }
+  .for-mac-inline { display: none; }
+  .os-mac .for-mac-inline { display: inline; }
+  .os-mac .for-win-inline { display: none; }
+
+  /* Opened from the app's "Check for updates…" as ?v=. */
+  .update {
+    margin: 0 auto 36px; max-width: 34rem; padding: 12px 16px;
+    background: var(--raised); border: 1px solid var(--line); border-radius: 11px;
+    color: var(--dim); font-size: .94rem; line-height: 1.55;
+  }
+  .update[data-state="new"] { border-color: var(--accent); }
+  .update[data-state="new"] strong { color: var(--accent); }
+  .update strong { color: var(--text); font-weight: 650; }
+
+  .copy {
+    font-family: "Cascadia Code", "SF Mono", Consolas, ui-monospace, monospace;
+    font-size: .74rem; line-height: 1;
+    margin-left: 6px; padding: 5px 8px; vertical-align: .08em;
+    background: transparent; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  }
+  .copy:hover { color: var(--text); border-color: var(--faint); }
+  .copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   /* --------------------------------------------------------- the demo menu */
   .demo { margin: 64px auto 0; display: flex; flex-direction: column; align-items: center; max-width: 820px; }
@@ -209,6 +232,12 @@
   .how p { margin: 0 0 16px; color: var(--dim); }
   .how p b { color: var(--text); font-weight: 600; }
 
+  .apps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+  .apps li { display: flex; gap: 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+  .apps img { flex: none; width: 32px; height: 32px; }
+  .apps a { font-weight: 600; }
+  .apps span { display: block; color: var(--dim); font-size: .92rem; line-height: 1.45; }
+
   footer { padding: 84px 0 56px; color: var(--faint); font-size: .9rem; text-align: center; }
   footer a { color: var(--dim); }
   footer small { display: block; margin-top: 8px; font-size: .8rem; }
@@ -220,6 +249,7 @@
   @media (max-width: 520px) {
     header.wrap { padding-top: 56px; }
     td:first-child { width: 40%; }
+    .apps { grid-template-columns: 1fr; }
     code { white-space: normal; overflow-wrap: anywhere; }
     .menu .r { padding-left: 8px; }
   }
@@ -229,6 +259,7 @@
 <body>
 
 <header class="wrap">
+  <div class="update" id="update" role="status" hidden></div>
   <img class="mark" src="img/icon-256.png" alt="" width="128" height="128">
   <h1>Porta</h1>
   <p class="tagline">See what's listening on your ports, from the tray, and stop it.</p>
@@ -238,7 +269,7 @@
     <a class="download ghost dl-mac" href="https://github.com/kidchenko/porta/releases/latest/download/Porta.dmg">Download for macOS</a>
   </div>
   <p class="alt for-win">Windows 10 or later. Also for <a href="https://github.com/kidchenko/porta/releases/latest/download/Porta.dmg">macOS</a>.</p>
-  <p class="alt for-mac">or <code>brew install --cask kidchenko/tap/porta</code></p>
+  <p class="alt for-mac">or <code data-copy>brew install --cask kidchenko/tap/porta</code></p>
 </header>
 
 <div class="wrap demo" aria-label="Interactive preview of Porta's menu">
@@ -305,10 +336,22 @@ Stopped node (pid 41859) on 3000.</pre>
     <h2>Install</h2>
     <table>
       <tr><td>macOS</td><td><a href="https://github.com/kidchenko/porta/releases/latest/download/Porta.dmg">Porta.dmg</a> (Apple silicon and Intel)</td></tr>
-      <tr><td>Homebrew</td><td><code>brew install --cask kidchenko/tap/porta</code></td></tr>
+      <tr><td>Homebrew</td><td><code data-copy>brew install --cask kidchenko/tap/porta</code></td></tr>
       <tr><td>Windows installer</td><td><a href="https://github.com/kidchenko/porta/releases/latest/download/Porta-Setup.exe">Porta-Setup.exe</a></td></tr>
     </table>
     <p class="alt" style="text-align:left">macOS 11 or later, or Windows 10 or later. It's about 1 MB and needs nothing else installed.</p>
+  </section>
+
+  <section>
+    <h2>More small tray apps</h2>
+    <ul class="apps">
+      <li><img src="https://josebarbosa.dev/cafe/img/icon-256.png" alt="" width="32" height="32"><div><a href="https://josebarbosa.dev/cafe/">Cafe</a><span>Keeps your Mac or PC awake, from the tray.</span></div></li>
+      <li><img src="https://josebarbosa.dev/cantos/img/icon-256.png" alt="" width="32" height="32"><div><a href="https://josebarbosa.dev/cantos/">Cantos</a><span>Hot corners for Windows, macOS and Linux.</span></div></li>
+      <li><img src="https://josebarbosa.dev/cota/img/icon-256.png" alt="" width="32" height="32"><div><a href="https://josebarbosa.dev/cota/">Cota</a><span>Your Claude usage limits, in the tray.</span></div></li>
+      <li><img src="https://josebarbosa.dev/luz/img/icon-256.png" alt="" width="32" height="32"><div><a href="https://josebarbosa.dev/luz/">Luz</a><span>Warms your screen at night, like f.lux.</span></div></li>
+      <li><img src="https://josebarbosa.dev/sonus/img/icon-256.png" alt="" width="32" height="32"><div><a href="https://josebarbosa.dev/sonus/">Sonus</a><span>A volume slider for every app.</span></div></li>
+      <li><img src="https://josebarbosa.dev/suavez/img/icon-256.png" alt="" width="32" height="32"><div><a href="https://josebarbosa.dev/suavez/">Sua Vez</a><span>Lights up when your coding agent finishes or needs you.</span></div></li>
+    </ul>
   </section>
 </main>
 
@@ -316,6 +359,7 @@ Stopped node (pid 41859) on 3000.</pre>
   Made by <a href="https://github.com/kidchenko">kidchenko</a>. MIT licensed.
   <a href="https://github.com/kidchenko/porta">Source</a> and
   <a href="https://github.com/kidchenko/porta/releases">releases</a> on GitHub.
+  <a href="https://josebarbosa.dev/portfolio/">All apps</a>.
   <small>Logos from <a href="https://devicon.dev">Devicon</a>, glyphs from <a href="https://lucide.dev">Lucide</a>. Each logo is a trademark of its owner.</small>
 </footer>
 
@@ -327,6 +371,72 @@ Stopped node (pid 41859) on 3000.</pre>
     var p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
     if (/mac/i.test(p)) document.body.classList.add("os-mac");
   } catch (e) {}
+
+  // Opened from the app's "Check for updates…" menu item as ?v=<installed>.
+  // The app never touches the network; this page asks GitHub instead.
+  (function () {
+    var have = new URLSearchParams(location.search).get("v");
+    if (!have || !/^\d+(\.\d+){0,3}$/.test(have)) return;
+    var box = document.getElementById("update");
+    function cmp(a, b) {
+      a = a.split("."); b = b.split(".");
+      for (var i = 0; i < Math.max(a.length, b.length); i++) {
+        var d = (+a[i] || 0) - (+b[i] || 0);
+        if (d) return d;
+      }
+      return 0;
+    }
+    function show(html, state) {
+      box.innerHTML = html;
+      box.setAttribute("data-state", state);
+      box.hidden = false;
+    }
+    fetch("https://api.github.com/repos/kidchenko/porta/releases/latest")
+      .then(function (r) { if (!r.ok) throw r.status; return r.json(); })
+      .then(function (rel) {
+        var latest = String(rel.tag_name || "").replace(/^v/, "");
+        if (!/^\d+(\.\d+){0,3}$/.test(latest)) throw "tag";
+        if (cmp(latest, have) > 0) {
+          show("<strong>Porta " + latest + " is out.</strong> You have " + have + ". " +
+               "Download it below, or run " +
+               "<code class=\"for-mac-inline\">brew upgrade --cask kidchenko/tap/porta</code>" +
+               "<code class=\"for-win-inline\">scoop update porta</code> if you installed it that way.", "new");
+        } else {
+          show("You have the latest version of Porta (" + have + ").", "current");
+        }
+      })
+      .catch(function () {
+        show("Could not reach GitHub to check. You have " + have + ". " +
+             "<a href=\"https://github.com/kidchenko/porta/releases\">See all releases</a>.", "error");
+      });
+  })();
+
+  // A Copy button after each install command.
+  document.querySelectorAll("code[data-copy]").forEach(function (code) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "copy";
+    b.textContent = "Copy";
+    b.addEventListener("click", function () {
+      function done() {
+        b.textContent = "Copied";
+        setTimeout(function () { b.textContent = "Copy"; }, 1500);
+      }
+      function select() {
+        var r = document.createRange();
+        r.selectNodeContents(code);
+        var sel = getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code.textContent).then(done, select);
+      } else {
+        select();
+      }
+    });
+    code.after(b);
+  });
 
   // The demo menu: the same rows, actions and states as the app.
   (function () {
@@ -391,7 +501,7 @@ Stopped node (pid 41859) on 3000.</pre>
       });
       if (n > 1) h += row({ action: "stop-all", cls: "danger", icon: glyph("stop"), text: "Stop all " + n + " servers" });
       h += SEP + row({ text: "Other apps and services", right: "4", arrow: true }) +
-        row({ text: "Settings", arrow: true }) + SEP +
+        row({ text: "Settings", arrow: true }) + row({ text: "Check for updates…" }) + SEP +
         row({ icon: glyph("power"), text: "Quit Porta", right: "⌘Q" });
       menu.innerHTML = h;
 

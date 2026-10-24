@@ -37,6 +37,7 @@ const ID_SYSTEM: &str = "system";
 const ID_REFRESH: &str = "refresh";
 const ID_EDIT: &str = "edit-config";
 const ID_AUTOSTART: &str = "autostart";
+const ID_UPDATES: &str = "check-updates";
 const ID_QUIT: &str = "quit";
 /// Shared by every read-only row; nothing dispatches on it.
 const ID_INERT: &str = "inert";
@@ -160,6 +161,11 @@ impl App {
                 }
             }
             ID_EDIT => open_config(),
+            // The page compares versions; Porta itself stays off the network.
+            ID_UPDATES => open_url(concat!(
+                "https://josebarbosa.dev/porta/?v=",
+                env!("CARGO_PKG_VERSION")
+            )),
             ID_AUTOSTART => {
                 let want = !autostart::is_enabled();
                 match autostart::set(want) {
@@ -533,6 +539,12 @@ impl App {
         items.extend([&sep2 as &dyn IsMenuItem, &version]);
         let _ = settings.append_items(&items);
         let _ = menu.append(&settings);
+        let _ = menu.append(&MenuItem::with_id(
+            ID_UPDATES,
+            "Check for updates\u{2026}",
+            true,
+            None,
+        ));
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&IconMenuItem::with_id(
             ID_QUIT,
